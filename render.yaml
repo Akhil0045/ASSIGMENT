@@ -1,0 +1,16 @@
+# Render Blueprint: deploy backend only (https://render.com/docs/blueprint-spec)
+# After first deploy: open the service URL — Swagger UI is at /api-docs (root / redirects there).
+# Set DATABASE_URL and JWT_SECRET in the Render dashboard (Environment), or attach a Render PostgreSQL instance.
+
+services:
+  - type: web
+    name: financeos-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: npx prisma migrate deploy && node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
