@@ -1,4 +1,5 @@
 # Render Blueprint: deploy backend only (https://render.com/docs/blueprint-spec)
+# If you create a Web Service manually, do NOT put "render.yaml" in Build Command — use the buildCommand below.
 # After first deploy: open the service URL — Swagger UI is at /api-docs (root / redirects there).
 # Set DATABASE_URL and JWT_SECRET in the Render dashboard (Environment), or attach a Render PostgreSQL instance.
 
