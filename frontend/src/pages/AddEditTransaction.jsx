@@ -1,18 +1,21 @@
-import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
+import React, { useState, useEffect, useContext } from 'react';
 import api from '../services/api';
 import SearchableSelect from '../components/SearchableSelect';
 
-const INCOME_CATEGORIES = ['Salary', 'Business', 'Investments', 'Extra income', 'Loan', 'Parental leave', 'Insurance payout', 'Other'];
-const EXPENSE_CATEGORIES = ['Groceries', 'Rent', 'Utilities', 'Transportation', 'Entertainment', 'Healthcare', 'Dining Out', 'Shopping', 'Other'];
+const INCOME_CATEGORIES = ['Revenue', 'Salary', 'Business', 'Investments', 'Freelance', 'Loan', 'Insurance', 'Other'];
+const EXPENSE_CATEGORIES = ['Operations', 'Rent', 'Utilities', 'Transportation', 'Software', 'Healthcare', 'Marketing', 'Equipment', 'Other'];
 
 const AddEditTransaction = () => {
+  const { user } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     amount: '',
     type: 'expense',
     category: '',
     description: '',
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    targetUserEmail: ''
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -25,14 +28,15 @@ const AddEditTransaction = () => {
       const fetchTransaction = async () => {
         try {
           const res = await api.get('/transactions', { params: { limit: 100 } });
-          const txn = res.data.transactions.find((t) => t._id === id);
+          const txn = res.data.transactions.find((t) => t.id === id);
           if (txn) {
             setFormData({
               amount: txn.amount,
               type: txn.type,
               category: txn.category,
               description: txn.description || '',
-              date: new Date(txn.date).toISOString().split('T')[0]
+              date: new Date(txn.date).toISOString().split('T')[0],
+              targetUserEmail: ''
             });
           }
         } catch (err) {
@@ -60,6 +64,11 @@ const AddEditTransaction = () => {
         ...formData,
         amount: Number(formData.amount)
       };
+      
+      // If the admin is empty or they aren't an admin, we don't pass the email 
+      if (user?.role !== 'admin' || isEditMode) {
+        delete payload.targetUserEmail;
+      }
 
       if (isEditMode) {
         await api.put(`/transactions/${id}`, payload);
@@ -83,9 +92,9 @@ const AddEditTransaction = () => {
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
           </div>
           <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-            {isEditMode ? 'Edit Transaction' : 'Record Transaction'}
+            {isEditMode ? 'Edit Financial Record' : 'Log Financial Entry'}
           </h2>
-          <p className="text-slate-500 mt-2 text-lg">Categorize accurately to keep your budgets on track.</p>
+          <p className="text-slate-500 mt-2 text-lg">Record income or expenses with category, amount, and date.</p>
         </div>
 
         {error && <div className="mb-8 p-4 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-sm font-semibold text-center">{error}</div>}
@@ -148,6 +157,21 @@ const AddEditTransaction = () => {
             />
           </div>
 
+          {user?.role === 'admin' && !isEditMode && (
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Target User Email</label>
+              <input 
+                type="email" 
+                name="targetUserEmail" 
+                value={formData.targetUserEmail} 
+                onChange={handleChange} 
+                required 
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow shadow-sm font-medium text-slate-700"
+                placeholder="Target viewer email (e.g. eve@finapp.com)"
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Note (Optional)</label>
             <input 
@@ -173,7 +197,7 @@ const AddEditTransaction = () => {
               disabled={isLoading}
               className="flex-[2] py-4 rounded-xl text-white font-bold bg-slate-900 hover:bg-black shadow-xl transition-all transform hover:-translate-y-1 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
             >
-              {isLoading ? 'Processing...' : (isEditMode ? 'Update Transaction' : 'Save Transaction')}
+              {isLoading ? 'Processing...' : (isEditMode ? 'Update Record' : 'Save Entry')}
             </button>
           </div>
         </form>

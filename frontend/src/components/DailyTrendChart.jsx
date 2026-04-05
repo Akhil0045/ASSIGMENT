@@ -44,7 +44,7 @@ const CustomTooltip = ({ active, payload }) => {
 const DailyTrendChart = ({ data, activeIndex, onBarClick }) => {
   return (
     <div className="w-full h-72">
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
         <BarChart 
           data={data} 
           margin={{ top: 10, right: 10, left: -20, bottom: 25 }}

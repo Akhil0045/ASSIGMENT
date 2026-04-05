@@ -1,6 +1,6 @@
 import React from 'react';
 
-const BudgetProgress = ({ budget }) => {
+const BudgetProgress = ({ budget, canEdit = false, onEdit }) => {
   const percentage = Math.min((budget.spent / budget.limit) * 100, 100);
   
   // Decide color logic based on utilization percentage
@@ -21,7 +21,18 @@ const BudgetProgress = ({ budget }) => {
   return (
     <div className={`p-4 rounded-xl border border-slate-100 ${bgColor} transition-colors`}>
       <div className="flex justify-between items-center mb-2">
-        <h4 className="font-semibold text-slate-800 capitalize">{budget.category}</h4>
+        <div className="flex items-center gap-2">
+          <h4 className="font-semibold text-slate-800 capitalize">{budget.category}</h4>
+          {canEdit && (
+            <button 
+              onClick={() => onEdit(budget)}
+              className="text-slate-400 hover:text-indigo-500 transition-colors"
+              title="Edit Budget Limit"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+            </button>
+          )}
+        </div>
         <span className={`text-sm font-bold ${textColor}`}>
           ${budget.spent.toFixed(2)} / ${budget.limit.toFixed(2)}
         </span>

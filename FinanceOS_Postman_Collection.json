@@ -1,0 +1,219 @@
+{
+	"info": {
+		"_postman_id": "financeos-hyper-complete-master",
+		"name": "FinanceOS HYPER-COMPLETE Master Suite",
+		"description": "The definitive API documentation for FinanceOS. Covers 100% of cases: Pagination, Date Filtering (7/30 days), Category Audits, Global Summaries, and RBAC security guardrails.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "0. Setup & Registration",
+			"item": [
+				{
+					"name": "Register New Account",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Test User\",\n    \"email\": \"new_user_{{$timestamp}}@finance.com\",\n    \"password\": \"Password123\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "register"] }
+					},
+					"description": "Registers a new user. Default role is 'viewer'. Use a unique email."
+				},
+				{
+					"name": "Identify: Login as Admin",
+					"event": [{ "listen": "test", "script": { "exec": ["const response = pm.response.json(); pm.collectionVariables.set(\"access_token\", response.token);"], "type": "text/javascript" } }],
+					"request": { "method": "POST", "body": { "mode": "raw", "raw": "{\"email\": \"admin@finance.com\", \"password\": \"Admin@123\"}", "options": { "raw": { "language": "json" } } }, "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "login"] } }
+				}
+			]
+		},
+		{
+			"name": "1. Case Studies: Filtering & Auditing",
+			"item": [
+				{
+					"name": "Date: Filter by Last 7 Days",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?startDate={{seven_days_ago}}",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [{ "key": "startDate", "value": "2026-03-29" }]
+						}
+					},
+					"description": "Verifies filtering for the last 7 days of activity. Uses the 'startDate' parameter (YYYY-MM-DD)."
+				},
+				{
+					"name": "Date: Filter by Last 30 Days",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?startDate={{thirty_days_ago}}",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [{ "key": "startDate", "value": "2026-03-05" }]
+						}
+					}
+				},
+				{
+					"name": "Category Audit: Food",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?category=Food",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [{ "key": "category", "value": "Food" }]
+						}
+					}
+				},
+				{
+					"name": "Type: Income Only",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?type=income",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [{ "key": "type", "value": "income" }]
+						}
+					}
+				},
+				{
+					"name": "Search: Full Text Keyword",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?search=lunch",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [{ "key": "search", "value": "lunch" }]
+						}
+					},
+					"description": "Searches both the category and description fields for the keyword (case-insensitive)."
+				},
+				{
+					"name": "Pagination: Next Page",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?page=2&limit=5",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [
+								{ "key": "page", "value": "2" },
+								{ "key": "limit", "value": "5" }
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. 👑 Admin Excellence (Overrides)",
+			"item": [
+				{
+					"name": "Proxy Create: Transaction + Date",
+					"request": {
+						"method": "POST",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetUserEmail\": \"viewer@finance.com\",\n    \"amount\": 120,\n    \"type\": \"expense\",\n    \"category\": \"Proxy-Entry\",\n    \"date\": \"2026-03-01T12:00:00Z\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{base_url}}/transactions", "host": ["{{base_url}}"], "path": ["transactions"] }
+					},
+					"description": "Admin only. Allows retroactive data entry for another user."
+				},
+				{
+					"name": "Audit User: Range + Category",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?email=viewer@finance.com&startDate=2026-03-01&category=Salary",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [
+								{ "key": "email", "value": "viewer@finance.com" },
+								{ "key": "startDate", "value": "2026-03-01" },
+								{ "key": "category", "value": "Salary" }
+							]
+						}
+					},
+					"description": "Complex audit scenario: specific user, date range, and category filter."
+				}
+			]
+		},
+		{
+			"name": "3. 🔬 Analyst Global Insights",
+			"item": [
+				{
+					"name": "Global Summary: Monthly",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/analytics/summary?startDate=2026-03-01",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "summary"],
+							"query": [{ "key": "startDate", "value": "2026-03-01" }]
+						}
+					},
+					"description": "Platform-wide summary for the entire month."
+				},
+				{
+					"name": "Audit Specific User Dashboard",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/analytics/summary?email=viewer@finance.com",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "summary"],
+							"query": [{ "key": "email", "value": "viewer@finance.com" }]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. 👁️ Viewer Privacy Labs",
+			"item": [
+				{
+					"name": "My History: Over 3-month range",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?startDate=2026-01-01&endDate=2026-03-31",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [
+								{ "key": "startDate", "value": "2026-01-01" },
+								{ "key": "endDate", "value": "2026-03-31" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Privacy Proof: Denied High-Level Filter",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/transactions?email=admin@finance.com",
+							"host": ["{{base_url}}"],
+							"path": ["transactions"],
+							"query": [{ "key": "email", "value": "admin@finance.com" }]
+						}
+					},
+					"description": "Verify that even if a Viewer tries to filter for 'admin@finance.com', the system only returns their own data."
+				}
+			]
+		}
+	],
+	"auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+	"variable": [
+		{ "key": "base_url", "value": "http://localhost:5000/api", "type": "string" },
+		{ "key": "access_token", "value": "", "type": "string" }
+	]
+}

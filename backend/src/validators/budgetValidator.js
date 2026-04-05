@@ -8,7 +8,8 @@ const budgetSchema = Joi.object({
     'number.base': 'Limit must be a number',
     'number.min': 'Limit cannot be negative',
     'any.required': 'Limit is required'
-  })
+  }),
+  targetUserEmail: Joi.string().email().optional()
 });
 
 module.exports = {

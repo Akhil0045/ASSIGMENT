@@ -6,6 +6,7 @@ const createTransactionSchema = Joi.object({
   category: Joi.string().min(2).max(50).required(),
   description: Joi.string().allow('').optional(),
   date: Joi.date().iso().optional(),
+  targetUserEmail: Joi.string().email().optional(),
 });
 
 const updateTransactionSchema = Joi.object({

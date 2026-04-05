@@ -5,25 +5,22 @@ const {
   getTransactions,
   updateTransaction,
   deleteTransaction,
-  getSummary,
-  getCharts
 } = require('../controllers/transactionController');
 const { protect } = require('../middlewares/auth');
+const { authorize } = require('../middlewares/authorize');
 const { validate } = require('../middlewares/validate');
 const { createTransactionSchema, updateTransactionSchema } = require('../validators/transactionValidator');
 
+// All routes require authentication
 router.use(protect);
 
-router.route('/')
-  .post(validate(createTransactionSchema), createTransaction)
-  .get(getTransactions);
+// ─── READ: All roles can access their own records ─────────────────────────────
+// Viewer → own data only | Analyst/Admin → all users' data (enforced in service)
+router.get('/', getTransactions);
 
-router.get('/summary', getSummary);
-router.get('/charts', getCharts);
-
-
-router.route('/:id')
-  .put(validate(updateTransactionSchema), updateTransaction)
-  .delete(deleteTransaction);
+// ─── WRITE: Admin and Viewer only (Analyst is read-only) ────────────────────
+router.post('/',   authorize('admin', 'viewer'), validate(createTransactionSchema), createTransaction);
+router.put('/:id', authorize('admin', 'viewer'), validate(updateTransactionSchema), updateTransaction);
+router.delete('/:id', authorize('admin', 'viewer'), deleteTransaction);
 
 module.exports = router;

@@ -1,121 +1,114 @@
-const Transaction = require('../models/Transaction');
+const { prisma } = require('../config/db');
+const { resolveScope } = require('../utils/scopeUtils');
 
-const addTransaction = async (userId, data) => {
-  return await Transaction.create({ ...data, userId });
-};
+/**
+ * RBAC Data Visibility Rules:
+ *
+ *  Viewer    → always sees ONLY own records. filterUser params ignored.
+ *  Analyst   → sees ALL records by default. Can filter by ?userId or ?email.
+ *              Cannot modify anything.
+ *  Admin     → sees ALL records by default. Can filter by ?userId or ?email.
+ *              Full write access (create/update/delete).
+ */
 
-const getTransactions = async (userId, query) => {
-  const { page = 1, limit = 10, type, category, startDate, endDate } = query;
-  
-  const filter = { userId, isDeleted: false };
-  
-  if (type) filter.type = type;
-  if (category) filter.category = { $regex: category, $options: 'i' };
-  if (startDate || endDate) {
-    filter.date = {};
-    if (startDate) filter.date.$gte = new Date(startDate);
-    if (endDate) filter.date.$lte = new Date(endDate);
-  }
+// ─── CREATE (Viewer & Admin) ──────────────────────────────────────────────────────
+const addTransaction = async (callerUserId, callerRole, data) => {
+  let targetUserId = callerUserId;
+  const { targetUserEmail, ...restData } = data;
 
-  const transactions = await Transaction.find(filter)
-    .sort({ date: -1 })
-    .skip((page - 1) * limit)
-    .limit(Number(limit));
-
-  const total = await Transaction.countDocuments(filter);
-
-  return { transactions, total, page: Number(page), pages: Math.ceil(total / limit) };
-};
-
-const updateTransaction = async (userId, id, data) => {
-  const transaction = await Transaction.findOne({ _id: id, userId, isDeleted: false });
-  if (!transaction) throw new Error('Transaction not found');
-
-  return await Transaction.findByIdAndUpdate(id, data, { new: true });
-};
-
-const softDeleteTransaction = async (userId, id) => {
-  const transaction = await Transaction.findOne({ _id: id, userId, isDeleted: false });
-  if (!transaction) throw new Error('Transaction not found');
-
-  transaction.isDeleted = true;
-  return await transaction.save();
-};
-
-const getBalanceSummary = async (userId) => {
-  const summary = await Transaction.aggregate([
-    { $match: { userId, isDeleted: false } },
-    {
-      $group: {
-        _id: '$type',
-        total: { $sum: '$amount' }
-      }
+  if (callerRole === 'admin') {
+    if (!targetUserEmail) {
+      throw Object.assign(new Error('Admin must specify a target user email when logging an entry.'), { status: 400 });
     }
+    const targetUser = await prisma.user.findUnique({ where: { email: targetUserEmail } });
+    if (!targetUser) throw Object.assign(new Error('Target user not found'), { status: 404 });
+    targetUserId = targetUser.id;
+  }
+
+  return await prisma.transaction.create({
+    data: {
+      ...restData,
+      userId: targetUserId,
+      date: restData.date ? new Date(restData.date) : new Date(),
+    },
+  });
+};
+
+// ─── READ: All roles — scope enforced by resolveScope() ──────────────────────
+const getTransactions = async (callerUserId, callerRole, query) => {
+  const { page = 1, limit = 10, type, category, startDate, endDate, search } = query;
+
+  const scope = await resolveScope(callerUserId, callerRole, query);
+
+  const where = { ...scope, isDeleted: false };
+
+  if (type) where.type = type;
+
+  if (search) {
+    where.OR = [
+      { category:    { contains: search, mode: 'insensitive' } },
+      { description: { contains: search, mode: 'insensitive' } },
+    ];
+  } else if (category) {
+    where.category = { contains: category, mode: 'insensitive' };
+  }
+
+  if (startDate || endDate) {
+    where.date = {};
+    if (startDate) where.date.gte = new Date(startDate);
+    if (endDate)   where.date.lte = new Date(endDate);
+  }
+
+  const [transactions, total] = await Promise.all([
+    prisma.transaction.findMany({
+      where,
+      orderBy: { date: 'desc' },
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+      include: {
+        user: { select: { email: true } }
+      }
+    }),
+    prisma.transaction.count({ where }),
   ]);
 
-  let income = 0;
-  let expenses = 0;
-
-  summary.forEach(item => {
-    if (item._id === 'income') income = item.total;
-    if (item._id === 'expense') expenses = item.total;
-  });
-
   return {
-    income,
-    expenses,
-    balance: income - expenses
+    transactions,
+    total,
+    page:  Number(page),
+    pages: Math.ceil(total / Number(limit)),
+    // Inform caller what scope was applied
+    scope: scope.userId
+      ? { filtered: true, userId: scope.userId }
+      : { filtered: false, description: 'All users aggregated' },
   };
 };
 
-const getChartData = async (userId, query = {}) => {
-  const { startDate, endDate } = query;
-  const matchFilter = { userId, isDeleted: false };
-  const expenseMatchFilter = { userId, type: 'expense', isDeleted: false };
-  
-  if (startDate || endDate) {
-    const dateQuery = {};
-    if (startDate) dateQuery.$gte = new Date(startDate + 'T00:00:00.000Z');
-    if (endDate) dateQuery.$lte = new Date(endDate + 'T23:59:59.999Z');
-    matchFilter.date = dateQuery;
-    expenseMatchFilter.date = dateQuery;
+// ─── UPDATE (All roles, restricted to own unless Admin) ──────────────────────────────────────────────────────
+const updateTransaction = async (id, data, callerUserId, callerRole) => {
+  const transaction = await prisma.transaction.findFirst({ where: { id, isDeleted: false } });
+  if (!transaction) throw Object.assign(new Error('Transaction not found'), { status: 404 });
+
+  if (callerRole !== 'admin' && transaction.userId !== callerUserId) {
+    throw Object.assign(new Error('Unauthorized: You can only modify your own transactions'), { status: 403 });
   }
 
-  const expensesByCategory = await Transaction.aggregate([
-    { $match: expenseMatchFilter },
-    {
-      $group: {
-        _id: '$category',
-        value: { $sum: '$amount' }
-      }
-    },
-    { $sort: { value: -1 } }
-  ]);
+  return await prisma.transaction.update({
+    where: { id },
+    data: { ...data, date: data.date ? new Date(data.date) : undefined },
+  });
+};
 
-  const trends = await Transaction.aggregate([
-    { $match: matchFilter },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-        income: {
-          $sum: {
-            $cond: [{ $eq: ['$type', 'income'] }, '$amount', 0]
-          }
-        },
-        expense: {
-          $sum: {
-            $cond: [{ $eq: ['$type', 'expense'] }, '$amount', 0]
-          }
-        }
-      }
-    },
-    { $sort: { _id: 1 } }
-  ]);
+// ─── SOFT DELETE (All roles, restricted to own unless Admin) ─────────────────────────────────────────────────
+const softDeleteTransaction = async (id, callerUserId, callerRole) => {
+  const transaction = await prisma.transaction.findFirst({ where: { id, isDeleted: false } });
+  if (!transaction) throw Object.assign(new Error('Transaction not found'), { status: 404 });
 
-  return {
-    expensesByCategory: expensesByCategory.map(item => ({ name: item._id, value: item.value })),
-    trends: trends.map(item => ({ date: item._id, income: item.income, expense: item.expense }))
-  };
+  if (callerRole !== 'admin' && transaction.userId !== callerUserId) {
+    throw Object.assign(new Error('Unauthorized: You can only delete your own transactions'), { status: 403 });
+  }
+
+  return await prisma.transaction.update({ where: { id }, data: { isDeleted: true } });
 };
 
 module.exports = {
@@ -123,6 +116,4 @@ module.exports = {
   getTransactions,
   updateTransaction,
   softDeleteTransaction,
-  getBalanceSummary,
-  getChartData
 };

@@ -15,6 +15,11 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Select cate
     return label.toLowerCase().includes(search.toLowerCase());
   });
 
+  const exactMatchExists = options.some((opt) => {
+    const label = typeof opt === 'string' ? opt : opt.label;
+    return label.toLowerCase() === search.toLowerCase().trim();
+  });
+
   // Handle clicking outside to close
   useEffect(() => {
     function handleClickOutside(event) {
@@ -75,7 +80,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Select cate
           </div>
           
           <ul className="max-h-60 overflow-y-auto p-1">
-            {filteredOptions.length === 0 ? (
+            {filteredOptions.length === 0 && search.trim() === '' ? (
               <li className="px-4 py-3 text-sm text-slate-500 italic text-center">No categories found</li>
             ) : (
               filteredOptions.map((opt, i) => {
@@ -95,6 +100,16 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Select cate
                   </li>
                 );
               })
+            )}
+            
+            {search.trim().length > 0 && !exactMatchExists && (
+              <li
+                onClick={() => handleSelect(search.trim())}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg cursor-pointer text-indigo-600 font-medium bg-indigo-50/50 hover:bg-indigo-50 transition-colors border border-dashed border-indigo-200 mt-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                Create "{search.trim()}"
+              </li>
             )}
           </ul>
         </div>

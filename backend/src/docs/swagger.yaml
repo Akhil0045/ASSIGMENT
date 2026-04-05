@@ -1,0 +1,588 @@
+openapi: 3.0.3
+info:
+  title: FinanceOS API
+  description: |
+    Enterprise-grade Personal Finance Management API with Role-Based Access Control.
+    
+    **Roles:**
+    - `viewer` — Manages own financial data only
+    - `analyst` — Read-only access to all data (no writes)
+    - `admin` — Full system access, can proxy actions for any user
+    
+    **Authentication:** Use the `/api/auth/login` endpoint to obtain a JWT token, then click **Authorize** and enter: `Bearer <your_token>`
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5000/api
+    description: Local Development Server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [viewer, analyst, admin] }
+        isActive: { type: boolean }
+
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        amount: { type: number }
+        type: { type: string, enum: [income, expense] }
+        category: { type: string }
+        description: { type: string }
+        date: { type: string, format: date-time }
+        isDeleted: { type: boolean }
+
+    Budget:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        category: { type: string }
+        limit: { type: number }
+        spent: { type: number }
+        remaining: { type: number }
+
+    ErrorResponse:
+      type: object
+      properties:
+        message: { type: string }
+
+tags:
+  - name: Auth
+    description: Authentication — register, login, get current user
+  - name: Transactions
+    description: Financial transaction CRUD (scoped by role)
+  - name: Analytics
+    description: Summary and chart data (scoped by role)
+  - name: Budget
+    description: Per-user category budget limits
+  - name: Admin
+    description: Platform administration (admin only)
+
+paths:
+  # ─── AUTH ──────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  example: John Doe
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  minLength: 6
+                  example: secret123
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and get JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  example: secret123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get currently logged-in user
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  # ─── TRANSACTIONS ──────────────────────────────────────────────────────────
+  /transactions:
+    get:
+      tags: [Transactions]
+      summary: Get transactions (scoped by role)
+      description: |
+        - **Viewer:** returns only own transactions
+        - **Analyst/Admin:** returns all transactions, filterable by `email` or `userId`
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: type
+          schema: { type: string, enum: [income, expense] }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: startDate
+          schema: { type: string, format: date, example: '2026-01-01' }
+        - in: query
+          name: endDate
+          schema: { type: string, format: date, example: '2026-12-31' }
+        - in: query
+          name: email
+          description: Admin/Analyst only — filter by user email
+          schema: { type: string, format: email }
+        - in: query
+          name: userId
+          description: Admin/Analyst only — filter by user ID
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Paginated transaction list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Transaction' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  totalPages: { type: integer }
+        '401':
+          description: Unauthorized
+
+    post:
+      tags: [Transactions]
+      summary: Create a transaction (viewer/admin only)
+      description: |
+        **Viewer:** Creates transaction for themselves.
+        **Admin:** Must include `targetUserEmail` to create on behalf of another user.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, type, category]
+              properties:
+                amount:
+                  type: number
+                  example: 500.00
+                type:
+                  type: string
+                  enum: [income, expense]
+                  example: expense
+                category:
+                  type: string
+                  example: food
+                description:
+                  type: string
+                  example: Dinner at restaurant
+                date:
+                  type: string
+                  format: date
+                  example: '2026-04-04'
+                targetUserEmail:
+                  type: string
+                  format: email
+                  description: Admin only — create for a specific user
+                  example: viewer@example.com
+      responses:
+        '201':
+          description: Transaction created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400':
+          description: Validation error
+        '403':
+          description: Analyst cannot create transactions
+
+  /transactions/{id}:
+    put:
+      tags: [Transactions]
+      summary: Update a transaction (viewer/admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: number, example: 750.00 }
+                type: { type: string, enum: [income, expense] }
+                category: { type: string, example: transport }
+                description: { type: string }
+                date: { type: string, format: date }
+      responses:
+        '200':
+          description: Transaction updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '403':
+          description: Forbidden
+        '404':
+          description: Transaction not found
+
+    delete:
+      tags: [Transactions]
+      summary: Soft-delete a transaction (viewer/admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Transaction deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: Record deleted }
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+
+  # ─── ANALYTICS ─────────────────────────────────────────────────────────────
+  /analytics/summary:
+    get:
+      tags: [Analytics]
+      summary: Get balance summary (income, expense, balance)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: email
+          description: Admin/Analyst only
+          schema: { type: string, format: email }
+        - in: query
+          name: userId
+          description: Admin/Analyst only
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Balance summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalIncome: { type: number, example: 15000 }
+                  totalExpense: { type: number, example: 8500 }
+                  balance: { type: number, example: 6500 }
+                  savingsRate: { type: number, example: 43.33 }
+
+  /analytics/charts:
+    get:
+      tags: [Analytics]
+      summary: Get chart data (daily trend, by category, monthly)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: startDate
+          schema: { type: string, format: date, example: '2026-03-01' }
+        - in: query
+          name: endDate
+          schema: { type: string, format: date, example: '2026-04-04' }
+        - in: query
+          name: email
+          description: Admin/Analyst only
+          schema: { type: string, format: email }
+        - in: query
+          name: userId
+          description: Admin/Analyst only
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  daily:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string }
+                        income: { type: number }
+                        expense: { type: number }
+                  byCategory:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category: { type: string }
+                        total: { type: number }
+                  monthly:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        month: { type: string }
+                        income: { type: number }
+                        expense: { type: number }
+
+  # ─── BUDGET ────────────────────────────────────────────────────────────────
+  /budget/status:
+    get:
+      tags: [Budget]
+      summary: Get budget status for all categories
+      description: Returns empty array for Admin/Analyst if no `email`/`userId` filter is provided.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: email
+          description: Admin/Analyst only — view a specific user's budgets
+          schema: { type: string, format: email }
+        - in: query
+          name: userId
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Budget status list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Budget' }
+
+  /budget:
+    post:
+      tags: [Budget]
+      summary: Set or update a category budget limit (viewer/admin only)
+      description: |
+        Upserts a budget for a category. If category already exists, the limit is updated.
+        **Admin:** must include `targetUserEmail` to assign budget to another user.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, limit]
+              properties:
+                category:
+                  type: string
+                  example: food
+                limit:
+                  type: number
+                  example: 5000
+                targetUserEmail:
+                  type: string
+                  format: email
+                  description: Admin only — assign budget to this user
+                  example: viewer@example.com
+      responses:
+        '200':
+          description: Budget set successfully
+        '400':
+          description: Validation error or admin missing targetUserEmail
+        '403':
+          description: Analyst cannot set budgets
+
+  # ─── ADMIN ─────────────────────────────────────────────────────────────────
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List all users in the system
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Array of all users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+        '403':
+          description: Admin only
+
+  /admin/users/{id}/role:
+    put:
+      tags: [Admin]
+      summary: Update a user's role
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [viewer, analyst, admin]
+                  example: analyst
+      responses:
+        '200':
+          description: Role updated
+        '403':
+          description: Admin only
+        '404':
+          description: User not found
+
+  /admin/users/{id}/status:
+    put:
+      tags: [Admin]
+      summary: Activate or deactivate a user account
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isActive]
+              properties:
+                isActive:
+                  type: boolean
+                  example: false
+      responses:
+        '200':
+          description: Status updated
+        '403':
+          description: Admin only
+
+  /admin/users/{id}:
+    delete:
+      tags: [Admin]
+      summary: Delete a user from the platform
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: User deleted
+        '403':
+          description: Admin only
+        '404':
+          description: User not found
+
+  /admin/stats:
+    get:
+      tags: [Admin]
+      summary: Get platform-wide system statistics
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: System-wide stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalUsers: { type: integer, example: 42 }
+                  totalTransactions: { type: integer, example: 1540 }
+                  totalIncome: { type: number, example: 980000 }
+                  totalExpense: { type: number, example: 640000 }
+        '403':
+          description: Admin only
