@@ -6,7 +6,23 @@ const { Pool } = require('pg');
 // The DATABASE_URL in .env has been updated to use 127.0.0.1
 const connectionString = process.env.DATABASE_URL;
 
-const pool = new Pool({ connectionString });
+// Render Postgres (and many cloud URLs) expect TLS; the pg pool needs explicit ssl when the host requires it.
+function getPoolConfig() {
+  if (!connectionString) {
+    return { connectionString };
+  }
+  const onRender = process.env.RENDER === 'true';
+  const urlWantsSsl = /sslmode=require|sslmode=no-verify|ssl=true/i.test(connectionString);
+  if (onRender || urlWantsSsl) {
+    return {
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+    };
+  }
+  return { connectionString };
+}
+
+const pool = new Pool(getPoolConfig());
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
