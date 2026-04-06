@@ -97,6 +97,6 @@ All features are systematically tested against the RBAC matrix. You can view the
 ---
 
 ## 📜 Assumptions & Tradeoffs
-- **PostgreSQL Migration**: The system was successfully migrated from MongoDB to PostgreSQL for better relational management of transactions and budgets.
+
 - **Soft Deletes**: Transactions use soft-deletion for data preservation.
 - **Budget Aggregation**: Budgets are strictly per-user and cannot be aggregated across the platform (unlike transactions).
